@@ -493,8 +493,12 @@ func (s *Writer) loadSnapshot(epoch uint64) (*Snapshot, error) {
 			if closer != nil {
 				_ = closer.Close()
 			}
+
+			// SAFELY copy potentially unsafe memory to prevent SIGSEGV
+			safeComputed := append([]byte(nil), computedCRCBytes...)
+			safeFile := append([]byte(nil), fileCRCBytes...)
 			return nil, fmt.Errorf("CRC mismatch loading snapshot %d: computed: %x file: %x",
-				epoch, computedCRCBytes, fileCRCBytes)
+				epoch, safeComputed, safeFile)
 		}
 	}
 	if closer != nil {
