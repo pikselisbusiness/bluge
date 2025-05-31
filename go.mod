@@ -1,4 +1,4 @@
-module github.com/blugelabs/bluge
+module github.com/pikselisbusiness/bluge
 
 go 1.13
 
