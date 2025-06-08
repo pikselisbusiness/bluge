@@ -479,28 +479,45 @@ func (s *Writer) loadSnapshot(epoch uint64) (*Snapshot, error) {
 	}
 
 	if crcReader != nil {
-		computedCRCBytes := make([]byte, crcWidth)
-		binary.BigEndian.PutUint32(computedCRCBytes, crcReader.Sum32())
-		var fileCRCBytes []byte
-		fileCRCBytes, err = data.Read(data.Len()-crcWidth, data.Len())
-		if err != nil {
+		// Only proceed if crcWidth > 0 and there's enough data
+		total := data.Len()
+		if crcWidth == 0 {
+			// nothing to do
+		} else if total < crcWidth {
 			if closer != nil {
 				_ = closer.Close()
 			}
-			return nil, fmt.Errorf("error reading snapshot CRC: %w", err)
-		}
-		if !bytes.Equal(computedCRCBytes, fileCRCBytes) {
+			return nil, fmt.Errorf(
+				"snapshot too small for CRC: length %d, need at least %d",
+				total, crcWidth,
+			)
+		} else {
+			// compute CRC
+			computedCRC := make([]byte, crcWidth)
+			binary.BigEndian.PutUint32(computedCRC, crcReader.Sum32())
+
+			// safely read the last crcWidth bytes
+			start := total - crcWidth
+			fileCRC, err := data.Read(start, total)
 			if closer != nil {
 				_ = closer.Close()
+			}
+			if err != nil {
+				return nil, fmt.Errorf("error reading snapshot CRC: %w", err)
 			}
 
-			// SAFELY copy potentially unsafe memory to prevent SIGSEGV
-			safeComputed := append([]byte(nil), computedCRCBytes...)
-			safeFile := append([]byte(nil), fileCRCBytes...)
-			return nil, fmt.Errorf("CRC mismatch loading snapshot %d: computed: %x file: %x",
-				epoch, safeComputed, safeFile)
+			// compare using safe copies
+			if !bytes.Equal(computedCRC, fileCRC) {
+				safeComputed := append([]byte(nil), computedCRC...)
+				safeFile := append([]byte(nil), fileCRC...)
+				return nil, fmt.Errorf(
+					"CRC mismatch loading snapshot %d: computed %x file %x",
+					epoch, safeComputed, safeFile,
+				)
+			}
 		}
 	}
+
 	if closer != nil {
 		err = closer.Close()
 		if err != nil {
